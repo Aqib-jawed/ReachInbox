@@ -51,6 +51,7 @@ export function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("token");
+    const slackParam = params.get("slack");
     const slackConnected = params.get("slack_connected");
 
     if (token) {
@@ -59,9 +60,12 @@ export function App() {
       addToast("success", "Signed in successfully!", "Welcome back.");
     }
 
-    if (slackConnected) {
+    if (slackParam === "connected" || slackConnected) {
       window.history.replaceState({}, document.title, window.location.pathname);
-      addToast("success", "Slack Connected!", "Rate limit alerts are active.");
+      addToast("success", "Slack connected!", "Real-time rate-limit alerts are active.");
+    } else if (slackParam === "error") {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      addToast("error", "Slack connection failed", "Authorization could not be completed.");
     }
   }, []);
 
@@ -167,12 +171,14 @@ export function App() {
 
   // Slack Handlers
   const handleSlackConnectRedirect = () => {
-    window.location.href = `${API_BASE}/api/slack/connect?userId=${user?.id}`;
+    const targetSenderId = (senders.length > 0 ? senders[0].id : "") || user?.id || "";
+    window.location.href = `${API_BASE}/api/slack/oauth/start?senderId=${targetSenderId}`;
   };
 
   const handleSlackDisconnect = async () => {
-    if (!user) return;
-    await api.disconnectSlack(user.id);
+    const targetSenderId = (senders.length > 0 ? senders[0].id : "") || user?.id || "";
+    if (!targetSenderId) return;
+    await api.disconnectSlack(targetSenderId);
     setIsSlackConnected(false);
     setSlackDetails(null);
     addToast("info", "Slack Disconnected");

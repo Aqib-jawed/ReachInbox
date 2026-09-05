@@ -100,12 +100,12 @@ export const api = {
     }),
 
   // Slack
-  getSlackStatus: (userId: string): Promise<{ connected: boolean; integration: any }> =>
-    fetchWithAuth(`/api/slack/status?userId=${userId}`),
+  getSlackStatus: (id: string): Promise<{ connected: boolean; integration?: any; slackWebhookUrl?: string | null }> =>
+    fetchWithAuth(`/api/slack/status/${id}`),
 
-  disconnectSlack: (userId: string) =>
-    fetchWithAuth("/api/slack/disconnect", {
+  disconnectSlack: (id: string) =>
+    fetchWithAuth(`/api/slack/disconnect/${id}`, {
       method: "POST",
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ senderId: id, userId: id }),
     }),
 };

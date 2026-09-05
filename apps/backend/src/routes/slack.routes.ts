@@ -1,16 +1,26 @@
 import { Router } from "express";
 import {
-  handleSlackConnect,
-  handleSlackCallback,
-  handleGetSlackStatus,
-  handleDisconnectSlack,
+  handleSlackOAuthStart,
+  handleSlackOAuthCallback,
+  handleGetSlackStatusBySender,
+  handleDisconnectSlackBySender,
 } from "../controllers/slack.controller";
 
 const router = Router();
 
-router.get("/connect", handleSlackConnect);
-router.get("/callback", handleSlackCallback);
-router.get("/status", handleGetSlackStatus);
-router.post("/disconnect", handleDisconnectSlack);
+// OAuth 2.0 incoming-webhook flow
+router.get("/oauth/start", handleSlackOAuthStart);
+router.get("/oauth/callback", handleSlackOAuthCallback);
+
+// Backward-compatible alias routes
+router.get("/connect", handleSlackOAuthStart);
+router.get("/callback", handleSlackOAuthCallback);
+
+// Per-sender status & disconnect
+router.get("/status/:senderId", handleGetSlackStatusBySender);
+router.get("/status", handleGetSlackStatusBySender);
+
+router.post("/disconnect/:senderId", handleDisconnectSlackBySender);
+router.post("/disconnect", handleDisconnectSlackBySender);
 
 export default router;

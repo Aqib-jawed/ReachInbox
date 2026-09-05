@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../config/db";
+import { getSlackAuthorizeUrl, exchangeSlackCode } from "../services/slack";
 import pino from "pino";
 
 const logger = pino({
@@ -7,139 +8,144 @@ const logger = pino({
   level: process.env.LOG_LEVEL || "info",
 });
 
-export async function handleSlackConnect(req: Request, res: Response) {
-  const { userId = "default_user" } = req.query;
-  const clientId = process.env.SLACK_CLIENT_ID;
-  const redirectUri = process.env.SLACK_REDIRECT_URI || "http://localhost:4000/api/slack/callback";
-
-  if (!clientId || clientId.includes("placeholder")) {
-    // If running in development with placeholder credentials, redirect back to frontend with a helpful flag
-    logger.info("Redirecting for Slack OAuth (placeholder credentials detected)");
-  }
-
-  const scopes = "incoming-webhook,chat:write";
-  const state = Buffer.from(JSON.stringify({ userId })).toString("base64");
-  const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId || "placeholder"}&scope=${scopes}&redirect_uri=${encodeURIComponent(
-    redirectUri
-  )}&state=${state}`;
-
-  res.redirect(authUrl);
+function getFrontendUrl(): string {
+  const url = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  return url.replace(/\/$/, "");
 }
 
-export async function handleSlackCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
+/**
+ * GET /api/slack/oauth/start?senderId=<id>
+ * Validates senderId exists in DB, then redirects (302) to Slack OAuth authorization URL.
+ */
+export async function handleSlackOAuthStart(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { code, state, error } = req.query;
+    const senderId = String(req.query.senderId || req.query.userId || "").trim();
 
-    if (error) {
+    if (!senderId) {
       res.status(400).json({
-        error: {
-          code: "SLACK_OAUTH_DENIED",
-          message: `Slack authorization was denied: ${error}`,
-        },
+        error: { code: "MISSING_SENDER_ID", message: "senderId is required to start Slack OAuth" },
       });
       return;
     }
 
-    if (!code) {
-      res.status(400).json({
-        error: {
-          code: "MISSING_CODE",
-          message: "No authorization code was provided by Slack",
-        },
-      });
-      return;
-    }
-
-    let userId = "default_user";
-    if (state) {
-      try {
-        const decoded = JSON.parse(Buffer.from(String(state), "base64").toString("utf-8"));
-        if (decoded.userId) userId = decoded.userId;
-      } catch {
-        // use default
-      }
-    }
-
-    const clientId = process.env.SLACK_CLIENT_ID;
-    const clientSecret = process.env.SLACK_CLIENT_SECRET;
-    const redirectUri = process.env.SLACK_REDIRECT_URI || "http://localhost:4000/api/slack/callback";
-
-    let webhookUrl = process.env.SLACK_WEBHOOK_URL || null;
-    let teamName = "Slack Workspace";
-    let teamId = "T000000";
-    let channel = "#general";
-    let accessToken = "xoxb-placeholder";
-
-    // Perform live token exchange if real credentials are provided
-    if (clientId && clientSecret && !clientId.includes("placeholder")) {
-      const tokenRes = await fetch("https://slack.com/api/oauth.v2.access", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          code: String(code),
-          redirect_uri: redirectUri,
-        }),
-      });
-
-      const tokenData: any = await tokenRes.json();
-      if (!tokenData.ok) {
-        throw new Error(`Slack OAuth exchange failed: ${tokenData.error}`);
-      }
-
-      accessToken = tokenData.access_token;
-      teamId = tokenData.team?.id || teamId;
-      teamName = tokenData.team?.name || teamName;
-      webhookUrl = tokenData.incoming_webhook?.url || webhookUrl;
-      channel = tokenData.incoming_webhook?.channel || channel;
-    }
-
-    // Upsert into DB for this user
-    const integration = await prisma.slackIntegration.upsert({
-      where: { userId },
-      update: {
-        teamId,
-        teamName,
-        accessToken,
-        webhookUrl,
-        channel,
-        connectedAt: new Date(),
-      },
-      create: {
-        userId,
-        teamId,
-        teamName,
-        accessToken,
-        webhookUrl,
-        channel,
-      },
+    // Validate sender exists in DB
+    const sender = await prisma.sender.findUnique({
+      where: { id: senderId },
     });
 
-    const frontendUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-    res.redirect(`${frontendUrl}?slack_connected=true&team=${encodeURIComponent(integration.teamName || "")}`);
+    if (!sender) {
+      res.status(404).json({
+        error: { code: "SENDER_NOT_FOUND", message: `Sender with id ${senderId} not found` },
+      });
+      return;
+    }
+
+    const authUrl = getSlackAuthorizeUrl(sender.id);
+    res.redirect(authUrl);
   } catch (err) {
     next(err);
   }
 }
 
-export async function handleGetSlackStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const { userId } = req.query;
+/**
+ * GET /api/slack/oauth/callback?code=<code>&state=<senderId>
+ * Exchanges Slack code, updates Sender.slackWebhookUrl, and redirects back to frontend.
+ */
+export async function handleSlackOAuthCallback(req: Request, res: Response): Promise<void> {
+  const frontendUrl = getFrontendUrl();
+  const { code, state, error } = req.query;
 
-    if (!userId) {
+  if (error || !code || !state) {
+    logger.warn({ error, code: !!code, state: !!state }, "Slack OAuth callback missing code or state");
+    res.redirect(`${frontendUrl}/dashboard?slack=error`);
+    return;
+  }
+
+  const senderId = String(state);
+
+  try {
+    const sender = await prisma.sender.findUnique({
+      where: { id: senderId },
+    });
+
+    if (!sender) {
+      logger.error({ senderId }, "Sender not found in Slack OAuth callback");
+      res.redirect(`${frontendUrl}/dashboard?slack=error`);
+      return;
+    }
+
+    const exchangeResult = await exchangeSlackCode(String(code));
+
+    // Update Sender row with the new webhook URL
+    await prisma.sender.update({
+      where: { id: senderId },
+      data: {
+        slackWebhookUrl: exchangeResult.webhookUrl,
+      },
+    });
+
+    // Also update SlackIntegration for user-level record if user exists
+    if (sender.userId) {
+      await prisma.slackIntegration.upsert({
+        where: { userId: sender.userId },
+        update: {
+          webhookUrl: exchangeResult.webhookUrl,
+          channel: exchangeResult.channel,
+          teamName: exchangeResult.teamName,
+          connectedAt: new Date(),
+        },
+        create: {
+          userId: sender.userId,
+          webhookUrl: exchangeResult.webhookUrl,
+          channel: exchangeResult.channel,
+          teamName: exchangeResult.teamName,
+        },
+      });
+    }
+
+    logger.info({ senderId, channel: exchangeResult.channel, teamName: exchangeResult.teamName }, "Slack connected successfully");
+    res.redirect(`${frontendUrl}/dashboard?slack=connected&team=${encodeURIComponent(exchangeResult.teamName)}`);
+  } catch (err: any) {
+    logger.error({ err: err?.message, senderId }, "Failed in Slack OAuth callback");
+    res.redirect(`${frontendUrl}/dashboard?slack=error`);
+  }
+}
+
+/**
+ * GET /api/slack/status/:senderId
+ * Returns { connected: boolean } based on sender's slackWebhookUrl.
+ */
+export async function handleGetSlackStatusBySender(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const targetId = req.params.senderId || String(req.query.senderId || req.query.userId || "");
+
+    if (!targetId) {
       res.status(400).json({
-        error: { code: "MISSING_USER_ID", message: "userId is required" },
+        error: { code: "MISSING_ID", message: "senderId or userId is required" },
       });
       return;
     }
 
-    const integration = await prisma.slackIntegration.findUnique({
-      where: { userId: String(userId) },
+    // Lookup by senderId or userId
+    let sender = await prisma.sender.findUnique({
+      where: { id: targetId },
     });
 
+    if (!sender) {
+      sender = await prisma.sender.findFirst({
+        where: { userId: targetId },
+      });
+    }
+
+    const integration = await prisma.slackIntegration.findUnique({
+      where: { userId: sender?.userId || targetId },
+    });
+
+    const connected = !!(sender?.slackWebhookUrl || integration?.webhookUrl);
+
     res.status(200).json({
-      connected: !!integration,
+      connected,
+      slackWebhookUrl: sender?.slackWebhookUrl || integration?.webhookUrl || null,
       integration: integration
         ? {
             teamName: integration.teamName,
@@ -153,24 +159,51 @@ export async function handleGetSlackStatus(req: Request, res: Response, next: Ne
   }
 }
 
-export async function handleDisconnectSlack(req: Request, res: Response, next: NextFunction): Promise<void> {
+/**
+ * POST /api/slack/disconnect/:senderId
+ * Sets slackWebhookUrl = null on the Sender row.
+ */
+export async function handleDisconnectSlackBySender(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { userId } = req.body;
+    const senderId = req.params.senderId || req.body?.senderId || req.body?.userId;
 
-    if (!userId) {
+    if (!senderId) {
       res.status(400).json({
-        error: { code: "MISSING_USER_ID", message: "userId is required" },
+        error: { code: "MISSING_SENDER_ID", message: "senderId is required" },
       });
       return;
     }
 
-    await prisma.slackIntegration.deleteMany({
-      where: { userId: String(userId) },
+    // Try finding by sender ID
+    let sender = await prisma.sender.findUnique({
+      where: { id: String(senderId) },
     });
 
+    if (sender) {
+      await prisma.sender.update({
+        where: { id: sender.id },
+        data: { slackWebhookUrl: null },
+      });
+      if (sender.userId) {
+        await prisma.slackIntegration.deleteMany({
+          where: { userId: sender.userId },
+        });
+      }
+    } else {
+      // If user ID was passed
+      await prisma.sender.updateMany({
+        where: { userId: String(senderId) },
+        data: { slackWebhookUrl: null },
+      });
+      await prisma.slackIntegration.deleteMany({
+        where: { userId: String(senderId) },
+      });
+    }
+
+    logger.info({ senderId }, "Slack disconnected successfully");
     res.status(200).json({
       success: true,
-      message: "Slack integration disconnected successfully",
+      message: "Slack disconnected successfully",
     });
   } catch (err) {
     next(err);

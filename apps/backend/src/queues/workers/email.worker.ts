@@ -95,17 +95,22 @@ export async function processEmailJob(job: Job<EmailJobData>) {
       }
     );
 
-    // Slack alert notification hook (Phase 5 integration)
+    // Slack alert notification hook
     try {
-      const { notifyRateLimitBreach } = await import("../../integrations/slack/notifier");
-      await notifyRateLimitBreach(emailRecord.userId, {
-        senderEmail: emailRecord.sender.etherealEmail,
-        currentCount: rateLimitResult.currentCount,
-        maxPerHour,
-        rescheduledTo: nextWindowAt,
-      });
-    } catch {
-      // Non-blocking if Slack integration is not configured yet
+      const { notifySlackRateLimitHit } = await import("../../services/slack");
+      await notifySlackRateLimitHit(
+        {
+          slackWebhookUrl: emailRecord.sender.slackWebhookUrl,
+          email: emailRecord.sender.etherealEmail,
+          etherealEmail: emailRecord.sender.etherealEmail,
+        },
+        {
+          hourlyLimit: maxPerHour,
+          nextRunAt: nextWindowAt,
+        }
+      );
+    } catch (slackErr) {
+      logger.error({ slackErr }, "Non-fatal error in Slack rate limit notification");
     }
 
     return {

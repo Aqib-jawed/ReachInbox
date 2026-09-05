@@ -31,6 +31,7 @@ model Sender {
   etherealPassword String             @map("ethereal_password")
   host             String             @default("smtp.ethereal.email")
   port             Int                @default(587)
+  slackWebhookUrl  String?            @map("slack_webhook_url")
   createdAt        DateTime           @default(now()) @map("created_at")
   updatedAt        DateTime           @updatedAt @map("updated_at")
 

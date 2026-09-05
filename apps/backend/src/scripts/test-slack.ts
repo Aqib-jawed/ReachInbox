@@ -6,11 +6,25 @@ dotenv.config();
 
 import { prisma } from "../config/db";
 import { notifyRateLimitBreach } from "../integrations/slack/notifier";
+import app from "../server";
+import http from "http";
 
 async function runSlackTests() {
   console.log("💬 Starting Phase 5 Slack Integration Acceptance Tests...\n");
 
-  const baseUrl = "http://localhost:4000";
+  let testServer: http.Server | null = null;
+  let baseUrl = "http://localhost:4000";
+
+  // Check if server is running on 4000, else start ephemeral server on 4005
+  try {
+    const health = await fetch("http://localhost:4000/health");
+    if (health.ok) {
+      baseUrl = "http://localhost:4000";
+    }
+  } catch {
+    testServer = app.listen(4005);
+    baseUrl = "http://localhost:4005";
+  }
 
   const testUser = await prisma.user.create({
     data: {
@@ -90,15 +104,51 @@ async function runSlackTests() {
       throw new Error("❌ Expected connected=false after disconnect");
     }
 
+    // 7. Test Per-Sender Slack Webhook Field & notifySlackRateLimitHit
+    console.log("\n7. Testing Per-Sender slackWebhookUrl and notifySlackRateLimitHit service...");
+    const { getSlackAuthorizeUrl, notifySlackRateLimitHit } = await import("../services/slack");
+
+    const testSender = await prisma.sender.create({
+      data: {
+        userId: testUser.id,
+        etherealEmail: "sender_slack_test@ethereal.email",
+        etherealPassword: "pass",
+        slackWebhookUrl: "https://httpbin.org/post",
+      },
+    });
+
+    const authUrl = getSlackAuthorizeUrl(testSender.id);
+    console.log(`✅ getSlackAuthorizeUrl generated: ${authUrl}`);
+    if (!authUrl.includes("scope=incoming-webhook") || !authUrl.includes(testSender.id)) {
+      throw new Error("❌ Invalid authorize URL generated");
+    }
+
+    // Call notifySlackRateLimitHit with connected sender
+    await notifySlackRateLimitHit(testSender, {
+      hourlyLimit: 50,
+      nextRunAt: new Date(Date.now() + 3600000),
+    });
+    console.log("✅ notifySlackRateLimitHit executed successfully on connected sender.");
+
+    // Call notifySlackRateLimitHit on null webhook (must no-op)
+    await notifySlackRateLimitHit({ slackWebhookUrl: null, email: "disconnected@example.com" }, {
+      hourlyLimit: 50,
+      nextRunAt: new Date(),
+    });
+    console.log("✅ notifySlackRateLimitHit safely no-ops on null webhookUrl.");
+
     // Cleanup
     await prisma.user.delete({ where: { id: testUser.id } });
     console.log("\n✅ Cleaned up Slack test records.");
-    console.log("\n🎉 PHASE 5 SLACK ACCEPTANCE TESTS PASSED SUCCESSFULLY!");
+    console.log("\n🎉 ALL SLACK OAUTH & SENDER TESTS PASSED SUCCESSFULLY!");
     process.exit(0);
   } catch (err) {
     console.error("❌ Slack test failed:", err);
     process.exit(1);
   } finally {
+    if (testServer) {
+      testServer.close();
+    }
     await prisma.$disconnect();
   }
 }
