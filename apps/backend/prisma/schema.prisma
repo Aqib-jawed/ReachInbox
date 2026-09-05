@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String             @id @default(cuid())
+  googleId         String             @unique @map("google_id")
+  email            String             @unique
+  name             String?
+  avatarUrl        String?            @map("avatar_url")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  senders          Sender[]
+  scheduledEmails  ScheduledEmail[]
+  slackIntegration SlackIntegration?
+  rateLimitConfigs RateLimitConfig[]
+
+  @@map("users")
+}
+
+model Sender {
+  id               String             @id @default(cuid())
+  userId           String             @map("user_id")
+  etherealEmail    String             @map("ethereal_email")
+  etherealPassword String             @map("ethereal_password")
+  host             String             @default("smtp.ethereal.email")
+  port             Int                @default(587)
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledEmails  ScheduledEmail[]
+  rateLimitConfig  RateLimitConfig?
+
+  @@map("senders")
+}
+
+enum EmailStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  RESCHEDULED
+}
+
+model ScheduledEmail {
+  id             String      @id @default(cuid())
+  userId         String      @map("user_id")
+  senderId       String      @map("sender_id")
+  recipientEmail String      @map("recipient_email")
+  subject        String
+  body           String      @db.Text
+  scheduledAt    DateTime    @map("scheduled_at")
+  sentAt         DateTime?   @map("sent_at")
+  status         EmailStatus @default(PENDING)
+  jobId          String?     @unique @map("job_id") // BullMQ job ID for idempotency
+  attempts       Int         @default(0)
+  errorMessage   String?     @map("error_message")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender         Sender      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([senderId, scheduledAt])
+  @@index([status])
+  @@map("scheduled_emails")
+}
+
+model SlackIntegration {
+  id          String   @id @default(cuid())
+  userId      String   @unique @map("user_id")
+  teamId      String?  @map("team_id")
+  teamName    String?  @map("team_name")
+  accessToken String?  @map("access_token")
+  webhookUrl  String?  @map("webhook_url")
+  channel     String?
+  connectedAt DateTime @default(now()) @map("connected_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("slack_integrations")
+}
+
+model RateLimitConfig {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  senderId   String?  @unique @map("sender_id")
+  maxPerHour Int      @default(50) @map("max_per_hour")
+  minDelayMs Int      @default(2000) @map("min_delay_ms")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender     Sender?  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@map("rate_limit_configs")
+}

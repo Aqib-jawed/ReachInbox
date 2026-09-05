@@ -1,0 +1,52 @@
+{
+  "name": "@reachinbox/backend",
+  "version": "1.0.0",
+  "description": "ReachInbox Email Scheduler Backend API",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only --exit-child src/server.ts",
+    "worker": "ts-node-dev --respawn --transpile-only --exit-child src/worker.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:worker": "node dist/worker.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:push": "prisma db push",
+    "test:db": "ts-node-dev --transpile-only src/scripts/test-db.ts",
+    "test:scheduler": "ts-node-dev --transpile-only src/scripts/test-scheduler.ts",
+    "test:restart": "ts-node-dev --transpile-only src/scripts/test-restart.ts",
+    "test:search": "ts-node-dev --transpile-only src/scripts/test-search.ts",
+    "test:slack": "ts-node-dev --transpile-only src/scripts/test-slack.ts",
+    "test:auth": "ts-node-dev --transpile-only src/scripts/test-auth.ts",
+    "test:api": "ts-node-dev --transpile-only src/scripts/test-api.ts"
+  },
+  "dependencies": {
+    "@bull-board/api": "^6.7.12",
+    "@bull-board/express": "^6.7.12",
+    "@elastic/elasticsearch": "^9.5.1",
+    "@prisma/client": "^5.22.0",
+    "bullmq": "^5.41.6",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ioredis": "^5.6.0",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^6.10.0",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.13.9",
+    "@types/nodemailer": "^6.4.17",
+    "pino-pretty": "^13.0.0",
+    "prisma": "^5.22.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.7.3"
+  }
+}
