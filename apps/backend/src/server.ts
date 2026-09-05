@@ -20,6 +20,7 @@ import authRoutes from "./routes/auth.routes";
 import emailRoutes from "./routes/email.routes";
 import senderRoutes from "./routes/sender.routes";
 import slackRoutes from "./routes/slack.routes";
+import queueRoutes from "./routes/queue.routes";
 
 const logger = pino({
   level: process.env.LOG_LEVEL || "info",
@@ -63,6 +64,7 @@ app.use("/api/auth", authRoutes);
 // Protected API Routes (Guarded by requireAuth)
 app.use("/api/emails", requireAuth, emailRoutes);
 app.use("/api/senders", requireAuth, senderRoutes);
+app.use("/api/queue", queueRoutes);
 app.use("/api/slack", slackRoutes); // OAuth callbacks are public; actions check session
 
 // Health check endpoint

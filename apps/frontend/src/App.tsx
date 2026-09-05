@@ -6,6 +6,7 @@ import { SentTable } from "./features/sent/SentTable";
 import { ComposeModal } from "./features/compose/ComposeModal";
 import { EmailPreviewModal } from "./components/EmailPreviewModal";
 import { SlackConnectModal } from "./features/slack-connect/SlackConnectModal";
+import { QueueOverview } from "./components/QueueOverview";
 import { LoginView } from "./features/auth/LoginView";
 import { ToastContainer, ToastMessage } from "./components/Toast";
 import {
@@ -17,6 +18,7 @@ import {
   ChevronDown,
   LogOut,
   Radio,
+  Layers,
 } from "lucide-react";
 
 export function App() {
@@ -24,7 +26,7 @@ export function App() {
   const [senders, setSenders] = useState<Sender[]>([]);
   const [scheduledEmails, setScheduledEmails] = useState<ScheduledEmail[]>([]);
   const [sentEmails, setSentEmails] = useState<ScheduledEmail[]>([]);
-  const [activeTab, setActiveTab] = useState<"scheduled" | "sent">("scheduled");
+  const [activeTab, setActiveTab] = useState<"scheduled" | "sent" | "queue">("scheduled");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
@@ -298,6 +300,25 @@ export function App() {
                   {sentEmails.length > 0 ? sentEmails.length : 785}
                 </span>
               </button>
+
+              {/* Queue: BullMQ live inspector */}
+              <button
+                type="button"
+                onClick={() => setActiveTab("queue")}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-colors duration-150 cursor-pointer ${
+                  activeTab === "queue"
+                    ? "bg-[#EAF7EE] text-[#1F2937] font-semibold"
+                    : "text-[#6B7280] hover:bg-[#F4F5F7] font-normal"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Layers className={`w-4 h-4 ${activeTab === "queue" ? "text-[#00A859]" : "text-[#6B7280]"}`} />
+                  <span>Queue</span>
+                </div>
+                <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-[#D1FAE5] text-[#00A859] font-medium font-mono">
+                  Live
+                </span>
+              </button>
             </nav>
           </div>
         </div>
@@ -372,9 +393,9 @@ export function App() {
         {/* Thin divider line */}
         <div className="border-b border-[#F4F5F6]" />
 
-        {/* Email Rows List (Immediately below search bar) */}
+        {/* Email Rows List / Queue Overview */}
         <div className="flex-1 overflow-y-auto px-2 sm:px-4">
-          {activeTab === "scheduled" ? (
+          {activeTab === "scheduled" && (
             <ScheduledTable
               emails={scheduledEmails}
               isLoading={isLoadingEmails}
@@ -382,7 +403,8 @@ export function App() {
               onOpenCompose={() => setIsComposeOpen(true)}
               onSelectEmail={(email) => setSelectedEmail(email)}
             />
-          ) : (
+          )}
+          {activeTab === "sent" && (
             <SentTable
               emails={sentEmails}
               isLoading={isLoadingEmails}
@@ -390,6 +412,9 @@ export function App() {
               onOpenCompose={() => setIsComposeOpen(true)}
               onSelectEmail={(email) => setSelectedEmail(email)}
             />
+          )}
+          {activeTab === "queue" && (
+            <QueueOverview />
           )}
         </div>
       </main>

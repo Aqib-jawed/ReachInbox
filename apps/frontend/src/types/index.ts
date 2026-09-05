@@ -67,3 +67,33 @@ export interface SchedulePayload {
   delayBetweenMs?: number;
   hourlyLimit?: number;
 }
+
+export interface QueueCounts {
+  waiting: number;
+  active: number;
+  delayed: number;
+  completed: number;
+  failed: number;
+  paused: number;
+  timestamp?: number;
+}
+
+export type QueueJobState = "waiting" | "active" | "delayed" | "completed" | "failed";
+
+export interface QueueJob {
+  id: string;
+  emailId: string;
+  senderId?: string | null;
+  state: QueueJobState;
+  delay?: number | null;
+  timestamp: number;
+  processedOn?: number | null;
+  finishedOn?: number | null;
+  attemptsMade: number;
+  failedReason?: string | null;
+  toEmail: string;
+  subject: string;
+  createdAt: string;
+  scheduledAt?: string | null;
+  sentAt?: string | null;
+}

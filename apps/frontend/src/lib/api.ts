@@ -6,7 +6,7 @@ export const API_BASE =
     ? "http://localhost:4000"
     : "https://reachinbox-api-lbxm.onrender.com");
 
-function getAuthToken(): string | null {
+export function getAuthToken(): string | null {
   return localStorage.getItem("reachinbox_auth_token");
 }
 
@@ -108,4 +108,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ senderId: id, userId: id }),
     }),
+
+  // Queue
+  getQueueCounts: (): Promise<{ success: boolean; counts: { waiting: number; active: number; delayed: number; completed: number; failed: number; paused: number } }> =>
+    fetchWithAuth("/api/queue/counts"),
+
+  getQueueJobs: (
+    state = "delayed",
+    start = 0,
+    end = 50
+  ): Promise<{ success: boolean; state: string; count: number; jobs: any[] }> =>
+    fetchWithAuth(`/api/queue/jobs?state=${state}&start=${start}&end=${end}`),
 };

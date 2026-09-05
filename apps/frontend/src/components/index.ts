@@ -12,4 +12,5 @@ export { ToastContainer, type ToastMessage } from "./Toast";
 export { ScheduledTable, type ScheduledTableProps } from "./ScheduledTable";
 export { SentTable, type SentTableProps } from "./SentTable";
 export { ComposeModal, type ComposeModalProps } from "./ComposeModal";
-
+export { QueueOverview } from "./QueueOverview";
+export { QueueJobsTable } from "./QueueJobsTable";

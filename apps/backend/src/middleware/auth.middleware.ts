@@ -23,6 +23,11 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     token = req.cookies.auth_token;
   }
 
+  // 3. Check Query parameter (for SSE EventSource connections)
+  if (!token && req.query && typeof req.query.token === "string") {
+    token = req.query.token;
+  }
+
   if (!token) {
     res.status(401).json({
       error: {
