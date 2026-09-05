@@ -1,6 +1,10 @@
 import { SchedulePayload, ScheduledEmail, Sender, User } from "../types";
 
-const API_BASE = "";
+export const API_BASE =
+  (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_URL) ||
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:4000"
+    : "https://reachinbox-api-lbxm.onrender.com");
 
 function getAuthToken(): string | null {
   return localStorage.getItem("reachinbox_auth_token");
@@ -29,14 +33,22 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${url}`, {
+  const endpoint = url.startsWith("http") ? url : `${API_BASE}${url}`;
+  const response = await fetch(endpoint, {
     ...options,
     headers,
   });
 
-  const data = await response.json();
+  const text = await response.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { error: { message: text || `HTTP ${response.status} ${response.statusText}` } };
+  }
+
   if (!response.ok) {
-    throw new Error(data.error?.message || "An unexpected error occurred");
+    throw new Error(data.error?.message || `Request failed with status ${response.status}`);
   }
   return data;
 }

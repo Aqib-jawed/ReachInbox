@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { User, ScheduledEmail, Sender } from "./types";
-import { api, setAuthToken } from "./lib/api";
+import { api, setAuthToken, API_BASE } from "./lib/api";
 import { ScheduledTable } from "./features/scheduled/ScheduledTable";
 import { SentTable } from "./features/sent/SentTable";
 import { ComposeModal } from "./features/compose/ComposeModal";
@@ -167,7 +167,7 @@ export function App() {
 
   // Slack Handlers
   const handleSlackConnectRedirect = () => {
-    window.location.href = `/api/slack/connect?userId=${user?.id}`;
+    window.location.href = `${API_BASE}/api/slack/connect?userId=${user?.id}`;
   };
 
   const handleSlackDisconnect = async () => {
