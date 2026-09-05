@@ -15,6 +15,7 @@ import { checkRedisHealth } from "./config/redis";
 import { checkElasticsearchHealth } from "./config/elasticsearch";
 import { bullBoardRouter } from "./admin/bull-board";
 import { requireAuth } from "./middleware/auth.middleware";
+import { createEmailWorker } from "./queues/workers/email.worker";
 import authRoutes from "./routes/auth.routes";
 import emailRoutes from "./routes/email.routes";
 import senderRoutes from "./routes/sender.routes";
@@ -100,14 +101,23 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
+// Initialize email worker inside the API server process
+const emailWorker = process.env.STANDALONE_WORKER === "true" ? null : createEmailWorker();
+
 const server = app.listen(PORT, () => {
   logger.info(`Server running on http://localhost:${PORT}`);
   logger.info(`Bull Board queue dashboard available at http://localhost:${PORT}/admin/queues`);
+  if (emailWorker) {
+    logger.info("Integrated background email worker active inside API server.");
+  }
 });
 
 // Graceful shutdown
-const handleShutdown = (signal: string) => {
+const handleShutdown = async (signal: string) => {
   logger.info(`Received ${signal}, shutting down gracefully...`);
+  if (emailWorker) {
+    await emailWorker.close();
+  }
   server.close(() => {
     logger.info("HTTP server closed.");
     process.exit(0);
