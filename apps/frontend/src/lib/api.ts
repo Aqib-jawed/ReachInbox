@@ -110,6 +110,20 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  startWarmup: (senderId: string, plan?: any): Promise<{ success: boolean; message: string; data: any }> =>
+    fetchWithAuth(`/api/senders/${senderId}/warmup/start`, {
+      method: "POST",
+      body: JSON.stringify({ plan }),
+    }),
+
+  stopWarmup: (senderId: string): Promise<{ success: boolean; message: string; data: any }> =>
+    fetchWithAuth(`/api/senders/${senderId}/warmup/stop`, {
+      method: "POST",
+    }),
+
+  getWarmupStatus: (senderId: string): Promise<{ success: boolean; data: any }> =>
+    fetchWithAuth(`/api/senders/${senderId}/warmup/status`),
+
   // Slack
   getSlackStatus: (id: string): Promise<{ connected: boolean; integration?: any; slackWebhookUrl?: string | null }> =>
     fetchWithAuth(`/api/slack/status/${id}`),

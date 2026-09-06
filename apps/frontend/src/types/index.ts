@@ -10,12 +10,28 @@ export interface User {
   slackIntegration?: SlackIntegration | null;
 }
 
+export interface WarmupStatus {
+  enabled: boolean;
+  startedAt: string | null;
+  daysSinceStart: number;
+  currentEffectiveLimit: number;
+  plan: Array<{ day: number; hourlyLimit: number }>;
+  ceilingLimit: number;
+  nextStepDay: number | null;
+  nextStepLimit: number | null;
+}
+
 export interface Sender {
   id: string;
   userId: string;
   etherealEmail: string;
   host: string;
   port: number;
+  slackWebhookUrl?: string | null;
+  warmupEnabled?: boolean;
+  warmupStartedAt?: string | null;
+  warmupPlan?: any;
+  warmupStatus?: WarmupStatus;
   rateLimitConfig?: RateLimitConfig | null;
 }
 

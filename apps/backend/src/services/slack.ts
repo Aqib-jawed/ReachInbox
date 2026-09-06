@@ -68,13 +68,24 @@ export async function exchangeSlackCode(
   };
 }
 
+export interface RateLimitSlackDetails {
+  hourlyLimit: number;
+  nextRunAt: Date;
+  warmup?: {
+    daysSinceStart: number;
+    effectiveLimit: number;
+    ceilingLimit: number;
+    totalDays?: number;
+  } | null;
+}
+
 /**
  * Posts a rate-limit breach alert to the sender's Slack webhook.
  * Never throws or rejects to ensure zero impact on worker stability.
  */
 export async function notifySlackRateLimitHit(
   sender: { slackWebhookUrl?: string | null; email?: string; etherealEmail?: string },
-  details: { hourlyLimit: number; nextRunAt: Date }
+  details: RateLimitSlackDetails
 ): Promise<void> {
   const webhookUrl = sender.slackWebhookUrl;
   if (!webhookUrl) {
@@ -85,7 +96,12 @@ export async function notifySlackRateLimitHit(
   const senderEmail = sender.email || sender.etherealEmail || "Sender";
   const formattedDate = details.nextRunAt.toISOString();
 
-  const message = `⚠️ Sender *${senderEmail}* hit its hourly limit of *${details.hourlyLimit}*. Remaining emails in this batch have been rescheduled to *${formattedDate}*.`;
+  let message: string;
+  if (details.warmup) {
+    message = `⚠️ Sender *${senderEmail}* hit its warm-up limit for day ${details.warmup.daysSinceStart} (${details.warmup.effectiveLimit}/hr). Ceiling is ${details.warmup.ceilingLimit}/hr once warm-up completes on day ${details.warmup.totalDays || 14}. Remaining emails have been rescheduled to *${formattedDate}*.`;
+  } else {
+    message = `⚠️ Sender *${senderEmail}* hit its hourly limit of *${details.hourlyLimit}*. Remaining emails in this batch have been rescheduled to *${formattedDate}*.`;
+  }
 
   try {
     const res = await fetch(webhookUrl, {

@@ -6,6 +6,7 @@ import { SentTable } from "./features/sent/SentTable";
 import { ComposeModal } from "./features/compose/ComposeModal";
 import { EmailPreviewModal } from "./components/EmailPreviewModal";
 import { SlackConnectModal } from "./features/slack-connect/SlackConnectModal";
+import { SenderWarmupModal } from "./features/warmup/SenderWarmupModal";
 import { QueueOverview } from "./components/QueueOverview";
 import { LoginView } from "./features/auth/LoginView";
 import { ToastContainer, ToastMessage } from "./components/Toast";
@@ -19,6 +20,7 @@ import {
   LogOut,
   Radio,
   Layers,
+  Flame,
 } from "lucide-react";
 
 export function App() {
@@ -37,6 +39,7 @@ export function App() {
   const [isSlackModalOpen, setIsSlackModalOpen] = useState<boolean>(false);
   const [isSlackConnected, setIsSlackConnected] = useState<boolean>(false);
   const [slackDetails, setSlackDetails] = useState<any>(null);
+  const [isWarmupModalOpen, setIsWarmupModalOpen] = useState<boolean>(false);
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -327,8 +330,28 @@ export function App() {
         <div className="pt-4 border-t border-[#F3F4F6] space-y-1">
           <button
             type="button"
+            onClick={() => setIsWarmupModalOpen(true)}
+            className="w-full flex items-center justify-between px-2 py-1.5 text-[11.5px] text-[#9CA3AF] hover:text-[#1F2937] transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-1.5">
+              <Flame className="w-3 h-3 text-[#F59E0B]" />
+              <span>Warm-up</span>
+            </div>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                senders[0]?.warmupEnabled
+                  ? "bg-[#FEF3C7] text-[#B45309]"
+                  : "bg-[#F3F4F6] text-[#9CA3AF]"
+              }`}
+            >
+              {senders[0]?.warmupEnabled ? "Active" : "Off"}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsSlackModalOpen(true)}
-            className="w-full flex items-center justify-between px-2 py-1.5 text-[11.5px] text-[#9CA3AF] hover:text-[#1F2937] transition-colors"
+            className="w-full flex items-center justify-between px-2 py-1.5 text-[11.5px] text-[#9CA3AF] hover:text-[#1F2937] transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-1.5">
               <Radio className="w-3 h-3" />
@@ -344,7 +367,7 @@ export function App() {
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11.5px] text-[#9CA3AF] hover:text-[#EF4444] transition-colors"
+            className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11.5px] text-[#9CA3AF] hover:text-[#EF4444] transition-colors cursor-pointer"
           >
             <LogOut className="w-3 h-3" />
             <span>Logout</span>
@@ -445,6 +468,15 @@ export function App() {
         integrationDetails={slackDetails}
         onConnect={handleSlackConnectRedirect}
         onDisconnect={handleSlackDisconnect}
+      />
+
+      {/* Sender Warmup Modal */}
+      <SenderWarmupModal
+        isOpen={isWarmupModalOpen}
+        onClose={() => setIsWarmupModalOpen(false)}
+        sender={senders[0] || null}
+        onUpdate={loadDashboardData}
+        onToast={addToast}
       />
 
       {/* Toast Notifications */}

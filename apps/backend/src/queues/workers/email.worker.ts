@@ -4,6 +4,7 @@ import { createRedisConnection } from "../../config/redis";
 import { prisma } from "../../config/db";
 import { checkAndIncrementRateLimit } from "../limiter/rate-limiter";
 import { sendEmailViaEthereal } from "../../integrations/ethereal/mailer";
+import { getEffectiveHourlyLimit, getWarmupStatus } from "../../services/warmup";
 import logger from "../../lib/logger";
 
 export async function processEmailJob(job: Job<EmailJobData>) {
@@ -61,17 +62,18 @@ export async function processEmailJob(job: Job<EmailJobData>) {
     },
   });
 
-  // Step 2: Rate limit check (Redis-backed, cross-worker safe)
-  const defaultLimit = parseInt(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || "50", 10);
-  const maxPerHour =
-    hourlyLimit || emailRecord.sender.rateLimitConfig?.maxPerHour || defaultLimit;
+  // Step 2: Rate limit check (Redis-backed, cross-worker safe with dynamic warmup support)
+  const defaultCeiling = parseInt(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || "50", 10);
+  const effectiveLimit =
+    hourlyLimit || getEffectiveHourlyLimit(emailRecord.sender, defaultCeiling);
 
-  const rateLimitResult = await checkAndIncrementRateLimit(senderId, maxPerHour);
+  const rateLimitResult = await checkAndIncrementRateLimit(senderId, effectiveLimit);
 
   if (!rateLimitResult.allowed) {
     // Reschedule for next open hour window without dropping or failing the job
     const nextWindowAt = rateLimitResult.nextWindowAt;
     const delayMs = rateLimitResult.delayToNextWindowMs;
+    const warmup = getWarmupStatus(emailRecord.sender, defaultCeiling);
 
     logger.warn(
       {
@@ -79,7 +81,9 @@ export async function processEmailJob(job: Job<EmailJobData>) {
         jobId: job.id,
         senderId,
         currentCount: rateLimitResult.currentCount,
-        maxPerHour,
+        effectiveLimit,
+        warmupEnabled: warmup.enabled,
+        warmupDay: warmup.daysSinceStart,
         nextWindowAt,
         delayMs,
       },
@@ -108,7 +112,7 @@ export async function processEmailJob(job: Job<EmailJobData>) {
       }
     );
 
-    // Slack alert notification hook
+    // Slack alert notification hook with warm-up context
     try {
       const { notifySlackRateLimitHit } = await import("../../services/slack");
       await notifySlackRateLimitHit(
@@ -118,8 +122,16 @@ export async function processEmailJob(job: Job<EmailJobData>) {
           etherealEmail: emailRecord.sender.etherealEmail,
         },
         {
-          hourlyLimit: maxPerHour,
+          hourlyLimit: effectiveLimit,
           nextRunAt: nextWindowAt,
+          warmup: warmup.enabled
+            ? {
+                daysSinceStart: warmup.daysSinceStart,
+                effectiveLimit,
+                ceilingLimit: warmup.ceilingLimit,
+                totalDays: 14,
+              }
+            : null,
         }
       );
     } catch (slackErr: any) {

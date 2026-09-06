@@ -32,6 +32,9 @@ model Sender {
   host             String             @default("smtp.ethereal.email")
   port             Int                @default(587)
   slackWebhookUrl  String?            @map("slack_webhook_url")
+  warmupEnabled    Boolean            @default(false) @map("warmup_enabled")
+  warmupStartedAt  DateTime?          @map("warmup_started_at")
+  warmupPlan       Json?              @map("warmup_plan")
   createdAt        DateTime           @default(now()) @map("created_at")
   updatedAt        DateTime           @updatedAt @map("updated_at")
 
