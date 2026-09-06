@@ -14,7 +14,6 @@ import {
   Clock,
   Send,
   Search,
-  Filter,
   RotateCw,
   ChevronDown,
   LogOut,
@@ -266,7 +265,7 @@ export function App() {
             </div>
 
             <nav className="space-y-1">
-              {/* Scheduled: Active soft mint green background #EAF7EE, Clock icon, "Scheduled", count "12" */}
+              {/* Scheduled: Real live count */}
               <button
                 type="button"
                 onClick={() => setActiveTab("scheduled")}
@@ -280,12 +279,18 @@ export function App() {
                   <Clock className="w-4 h-4 text-[#1F2937]" />
                   <span>Scheduled</span>
                 </div>
-                <span className="text-[12px] text-[#6B7280]">
-                  {scheduledEmails.length > 0 ? scheduledEmails.length : 12}
+                <span
+                  className={`text-[11.5px] px-2 py-0.5 rounded-full font-mono font-medium ${
+                    scheduledEmails.length > 0
+                      ? "bg-[#FEF3C7] text-[#B45309]"
+                      : "bg-[#F3F4F6] text-[#9CA3AF]"
+                  }`}
+                >
+                  {scheduledEmails.length}
                 </span>
               </button>
 
-              {/* Sent: Paper plane icon, "Sent", count "785" */}
+              {/* Sent: Real live count */}
               <button
                 type="button"
                 onClick={() => setActiveTab("sent")}
@@ -299,8 +304,14 @@ export function App() {
                   <Send className="w-4 h-4 text-[#6B7280]" />
                   <span>Sent</span>
                 </div>
-                <span className="text-[12px] text-[#9CA3AF]">
-                  {sentEmails.length > 0 ? sentEmails.length : 785}
+                <span
+                  className={`text-[11.5px] px-2 py-0.5 rounded-full font-mono font-medium ${
+                    sentEmails.length > 0
+                      ? "bg-[#EAF7EE] text-[#00A859]"
+                      : "bg-[#F3F4F6] text-[#9CA3AF]"
+                  }`}
+                >
+                  {sentEmails.length}
                 </span>
               </button>
 
@@ -377,39 +388,45 @@ export function App() {
 
       {/* MAIN CONTENT AREA: Pure white background */}
       <main className="flex-1 bg-white flex flex-col min-w-0">
-        {/* Main Content Header: Wide gray search pill + Filter icon + Refresh icon */}
-        <div className="pt-4 pb-3 px-6 flex items-center gap-3">
-          {/* Search Bar: Rounded-full, #F4F5F7 background, Search icon on left */}
-          <div className="bg-[#F4F5F7] rounded-full px-4 py-2 flex items-center gap-2.5 w-full max-w-xl">
+        {/* Main Content Header: Wide gray search pill + Quick Stats + Action Icons */}
+        <div className="pt-4 pb-3 px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Search Bar */}
+          <div className="bg-[#F4F5F7] rounded-full px-4 py-2 flex items-center gap-2.5 w-full max-w-lg">
             <Search className="w-4 h-4 text-[#9CA3AF] shrink-0" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search"
+              placeholder="Search recipient, subject, or message..."
               className="bg-transparent text-[13px] text-[#1F2937] placeholder-[#9CA3AF] outline-none w-full"
             />
           </div>
 
-          {/* Action Icons: Filter & Reload */}
-          <div className="flex items-center gap-2 text-[#9CA3AF] shrink-0 ml-1">
-            <button
-              type="button"
-              onClick={() => addToast("info", "Filter", "Viewing all emails")}
-              className="p-1.5 hover:text-[#1F2937] transition-colors cursor-pointer"
-              title="Filter"
-            >
-              <Filter className="w-4 h-4" />
-            </button>
+          {/* Real-time KPI Metric Pills */}
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAFAFA] border border-[#EDEDED] text-[#6B7280]">
+              <span className="text-[#9CA3AF]">Pending:</span>
+              <span className="font-bold text-[#1F2937] font-mono">{scheduledEmails.length}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAFAFA] border border-[#EDEDED] text-[#6B7280]">
+              <span className="text-[#9CA3AF]">Dispatched:</span>
+              <span className="font-bold text-[#00A859] font-mono">
+                {sentEmails.filter((e) => e.status === "SENT").length}
+              </span>
+            </div>
 
-            <button
-              type="button"
-              onClick={loadDashboardData}
-              className="p-1.5 hover:text-[#1F2937] transition-colors cursor-pointer"
-              title="Refresh"
-            >
-              <RotateCw className="w-4 h-4" />
-            </button>
+            {/* Action Icons */}
+            <div className="flex items-center gap-1 text-[#9CA3AF] ml-1">
+              <button
+                type="button"
+                onClick={loadDashboardData}
+                disabled={isLoadingEmails}
+                className="p-1.5 hover:text-[#1F2937] transition-colors cursor-pointer rounded-lg hover:bg-[#F4F5F7]"
+                title="Refresh Data"
+              >
+                <RotateCw className={`w-4 h-4 ${isLoadingEmails ? "animate-spin text-[#00A859]" : ""}`} />
+              </button>
+            </div>
           </div>
         </div>
 

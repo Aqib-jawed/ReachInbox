@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ScheduledEmail } from "../../types";
-import { CheckCircle2, AlertCircle, RotateCw, Loader2, Ban } from "lucide-react";
+import { CheckCircle2, AlertCircle, RotateCw, Loader2, Ban, Inbox, Plus } from "lucide-react";
 import { api } from "../../lib/api";
 
 interface SentTableProps {
@@ -12,43 +12,11 @@ interface SentTableProps {
   onToast?: (type: "success" | "error" | "info", title: string, message?: string) => void;
 }
 
-const DEFAULT_SENT_ITEMS: ScheduledEmail[] = [
-  {
-    id: "sent-1",
-    recipientEmail: "Sarah Connor",
-    subject: "Project milestone recap - Sent",
-    body: "Hi Sarah, thank you for attending the sync earlier today...",
-    scheduledAt: new Date(Date.now() - 3600000).toISOString(),
-    sentAt: new Date(Date.now() - 3600000).toISOString(),
-    status: "SENT",
-    userId: "demo",
-    senderId: "demo-sender",
-    attempts: 1,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "sent-2",
-    recipientEmail: "Alex Morgan",
-    subject: "Contract finalized & signed - Sent",
-    body: "Hi Alex, please find the signed documentation attached...",
-    scheduledAt: new Date(Date.now() - 7200000).toISOString(),
-    sentAt: new Date(Date.now() - 7200000).toISOString(),
-    status: "SENT",
-    userId: "demo",
-    senderId: "demo-sender",
-    attempts: 1,
-    createdAt: new Date().toISOString(),
-  },
-];
-
-function formatScreenshotTime(dateStr?: string | Date, index?: number) {
-  if (!dateStr) {
-    return index === 1 ? "Mon 11:20:45 AM" : "Mon 02:40:10 PM";
-  }
+function formatDisplayTime(dateStr?: string | Date) {
+  if (!dateStr) return "-";
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) {
-    return index === 1 ? "Mon 11:20:45 AM" : "Mon 02:40:10 PM";
-  }
+  if (isNaN(d.getTime())) return String(dateStr);
+
   const weekday = d.toLocaleDateString("en-US", { weekday: "short" });
   const time = d.toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -61,15 +29,16 @@ function formatScreenshotTime(dateStr?: string | Date, index?: number) {
 
 export const SentTable: React.FC<SentTableProps> = ({
   emails,
-  isLoading: _isLoading,
+  isLoading,
   onRefresh,
+  onOpenCompose,
   onSelectEmail,
   onToast,
 }) => {
   const [retryingIds, setRetryingIds] = useState<Record<string, boolean>>({});
   const [filterState, setFilterState] = useState<"all" | "sent" | "failed" | "cancelled">("all");
 
-  const baseItems = emails && emails.length > 0 ? emails : DEFAULT_SENT_ITEMS;
+  const baseItems = emails || [];
 
   const displayItems = baseItems.filter((item) => {
     if (filterState === "all") return true;
@@ -81,10 +50,7 @@ export const SentTable: React.FC<SentTableProps> = ({
 
   const handleRetry = async (e: React.MouseEvent, email: ScheduledEmail) => {
     e.stopPropagation();
-    if (!email.id || email.id.startsWith("sent-")) {
-      onToast?.("info", "Demo item", "Cannot retry demo item");
-      return;
-    }
+    if (!email.id) return;
 
     setRetryingIds((prev) => ({ ...prev, [email.id]: true }));
     try {
@@ -97,6 +63,37 @@ export const SentTable: React.FC<SentTableProps> = ({
       setRetryingIds((prev) => ({ ...prev, [email.id]: false }));
     }
   };
+
+  if (isLoading && (!emails || emails.length === 0)) {
+    return (
+      <div className="py-20 flex flex-col items-center justify-center gap-3 text-[#9CA3AF]">
+        <div className="w-7 h-7 border-2 border-[#00A859] border-t-transparent rounded-full animate-spin" />
+        <span className="text-[13px]">Loading dispatched emails...</span>
+      </div>
+    );
+  }
+
+  if (!emails || emails.length === 0) {
+    return (
+      <div className="py-16 text-center px-4 border border-dashed border-[#EDEDED] rounded-2xl bg-[#FAFAFA] my-6 max-w-lg mx-auto">
+        <div className="w-12 h-12 rounded-full bg-[#F3F4F6] text-[#6B7280] flex items-center justify-center mx-auto mb-3">
+          <Inbox className="w-6 h-6" />
+        </div>
+        <h3 className="text-[15px] font-bold text-[#1F2937] mb-1">No sent emails yet</h3>
+        <p className="text-[12.5px] text-[#9CA3AF] mb-5 max-w-xs mx-auto">
+          Dispatched and delivered emails will appear here with delivery timestamps, message previews, and error logs.
+        </p>
+        <button
+          type="button"
+          onClick={onOpenCompose}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#00A859] text-white hover:bg-[#008f4c] text-[13px] font-semibold transition-all shadow-xs cursor-pointer"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Send First Email</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">
@@ -146,10 +143,10 @@ export const SentTable: React.FC<SentTableProps> = ({
           No emails found matching filter: <span className="font-semibold text-[#374151]">{filterState}</span>
         </div>
       ) : (
-        displayItems.map((email, idx) => {
-          const timeBadgeText = formatScreenshotTime(email.sentAt || email.scheduledAt, idx);
+        displayItems.map((email) => {
+          const timeBadgeText = formatDisplayTime(email.sentAt || email.scheduledAt);
 
-          const rawSnippet = (email.body || "Hi, please review the dispatched communication...")
+          const rawSnippet = (email.body || "No content")
             .replace(/<[^>]*>?/gm, "")
             .replace(/\n/g, " ")
             .trim();
@@ -164,7 +161,7 @@ export const SentTable: React.FC<SentTableProps> = ({
 
           return (
             <div
-              key={email.id || idx}
+              key={email.id}
               onClick={() => onSelectEmail && onSelectEmail(email)}
               className="py-3 px-4 flex items-center justify-between border-b border-[#F4F5F6] hover:bg-[#FAFAFA] transition-colors duration-150 cursor-pointer text-[13px] group"
             >
