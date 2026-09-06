@@ -1,9 +1,4 @@
-import pino from "pino";
-
-const logger = pino({
-  name: "slack-service",
-  level: process.env.LOG_LEVEL || "info",
-});
+import logger from "../lib/logger";
 
 /**
  * Builds the Slack OAuth 2.0 authorization URL with incoming-webhook scope.

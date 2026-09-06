@@ -8,11 +8,11 @@ dotenv.config();
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import pino from "pino";
 import pinoHttp from "pino-http";
-import { checkDbHealth } from "./config/db";
-import { checkRedisHealth } from "./config/redis";
-import { checkElasticsearchHealth } from "./config/elasticsearch";
+import logger from "./lib/logger";
+import { prisma } from "./config/db";
+import { redisConnection } from "./config/redis";
+import { esClient } from "./config/elasticsearch";
 import { bullBoardRouter } from "./admin/bull-board";
 import { requireAuth } from "./middleware/auth.middleware";
 import { createEmailWorker } from "./queues/workers/email.worker";
@@ -21,17 +21,6 @@ import emailRoutes from "./routes/email.routes";
 import senderRoutes from "./routes/sender.routes";
 import slackRoutes from "./routes/slack.routes";
 import queueRoutes from "./routes/queue.routes";
-
-const logger = pino({
-  level: process.env.LOG_LEVEL || "info",
-  transport:
-    process.env.NODE_ENV !== "production"
-      ? {
-          target: "pino-pretty",
-          options: { colorize: true },
-        }
-      : undefined,
-});
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -67,18 +56,71 @@ app.use("/api/senders", requireAuth, senderRoutes);
 app.use("/api/queue", queueRoutes);
 app.use("/api/slack", slackRoutes); // OAuth callbacks are public; actions check session
 
-// Health check endpoint
-app.get("/health", async (_req: Request, res: Response) => {
-  const isDbHealthy = await checkDbHealth();
-  const isRedisHealthy = await checkRedisHealth();
-  const isEsHealthy = await checkElasticsearchHealth();
-  const isHealthy = isDbHealthy && isRedisHealthy;
+// Helper with timeout
+async function withTimeout<T>(promise: Promise<T>, timeoutMs = 2000, fallback: T): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), timeoutMs);
+  });
+  return Promise.race([
+    promise.then((res) => {
+      clearTimeout(timer);
+      return res;
+    }),
+    timeoutPromise,
+  ]).catch(() => fallback);
+}
 
-  res.status(isHealthy ? 200 : 503).json({
-    status: isHealthy ? "ok" : "degraded",
-    db: isDbHealthy,
-    redis: isRedisHealthy,
-    elasticsearch: isEsHealthy,
+// Dependency-aware Health check endpoint (Section 5)
+app.get("/health", async (_req: Request, res: Response) => {
+  const isEsEnabled = process.env.ELASTICSEARCH_ENABLED !== "false";
+
+  type DepStatus = "ok" | "error";
+  type EsStatus = "ok" | "error" | "disabled";
+
+  // Check dependencies in parallel with short timeout (~1.5-2s)
+  const [pgResult, redisResult, esResult] = await Promise.all([
+    withTimeout<DepStatus>(
+      prisma
+        .$queryRaw`SELECT 1`
+        .then((): DepStatus => "ok")
+        .catch((): DepStatus => "error"),
+      2000,
+      "error"
+    ),
+    withTimeout<DepStatus>(
+      redisConnection
+        .ping()
+        .then((pong: string): DepStatus => (pong === "PONG" ? "ok" : "error"))
+        .catch((): DepStatus => "error"),
+      2000,
+      "error"
+    ),
+    isEsEnabled
+      ? withTimeout<EsStatus>(
+          esClient
+            .ping()
+            .then((pong: boolean): EsStatus => (pong ? "ok" : "error"))
+            .catch((): EsStatus => "error"),
+          2000,
+          "error"
+        )
+      : Promise.resolve<EsStatus>("disabled"),
+  ]);
+
+  const isCriticalOk = pgResult === "ok" && redisResult === "ok";
+  const overallStatus: "ok" | "degraded" = isCriticalOk && (esResult === "ok" || esResult === "disabled") ? "ok" : "degraded";
+
+  const statusCode = isCriticalOk ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: overallStatus,
+    checks: {
+      postgres: pgResult,
+      redis: redisResult,
+      elasticsearch: esResult,
+    },
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -92,7 +134,7 @@ app.use((_req: Request, res: Response) => {
   });
 });
 
-// Structured error handling middleware (AGENTS.md Section 5)
+// Structured error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   logger.error({ err }, "Unhandled server error");
   res.status(500).json({
@@ -103,7 +145,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-// Initialize email worker inside the API server process
+// Initialize email worker inside the API server process if not standalone
 const emailWorker = process.env.STANDALONE_WORKER === "true" ? null : createEmailWorker();
 
 const server = app.listen(PORT, () => {
@@ -114,16 +156,59 @@ const server = app.listen(PORT, () => {
   }
 });
 
-// Graceful shutdown
+// Graceful shutdown (Section 1)
+let isShuttingDown = false;
 const handleShutdown = async (signal: string) => {
-  logger.info(`Received ${signal}, shutting down gracefully...`);
-  if (emailWorker) {
-    await emailWorker.close();
-  }
-  server.close(() => {
-    logger.info("HTTP server closed.");
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  logger.info({ signal }, `Received ${signal}, shutting down API server gracefully...`);
+
+  // Hard timeout: 25 seconds safety ceiling
+  const forceExitTimer = setTimeout(() => {
+    logger.warn("Shutdown timeout of 25s exceeded. Forcing exit now.");
+    process.exit(1);
+  }, 25000);
+  forceExitTimer.unref();
+
+  try {
+    // 1. Close HTTP server so no new requests are accepted
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        logger.info("HTTP server closed.");
+        resolve();
+      });
+    });
+
+    // 2. Close integrated worker if running
+    if (emailWorker) {
+      logger.info("Draining integrated worker...");
+      await emailWorker.close();
+      logger.info("Integrated worker drained.");
+    }
+
+    // 3. Disconnect Redis
+    try {
+      await redisConnection.quit();
+      logger.info("Redis connection closed.");
+    } catch (redisErr) {
+      logger.warn({ redisErr }, "Redis disconnect warning");
+    }
+
+    // 4. Disconnect Prisma
+    try {
+      await prisma.$disconnect();
+      logger.info("Prisma DB connection closed.");
+    } catch (dbErr) {
+      logger.warn({ dbErr }, "Prisma disconnect warning");
+    }
+
+    logger.info("API server graceful shutdown complete. Exiting.");
     process.exit(0);
-  });
+  } catch (err: any) {
+    logger.error({ err }, "Error during API server shutdown");
+    process.exit(1);
+  }
 };
 
 process.on("SIGINT", () => handleShutdown("SIGINT"));

@@ -48,6 +48,7 @@ enum EmailStatus {
   SENT
   FAILED
   RESCHEDULED
+  CANCELLED
 }
 
 model ScheduledEmail {

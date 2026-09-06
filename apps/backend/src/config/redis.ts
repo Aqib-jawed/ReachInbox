@@ -17,8 +17,8 @@ export const redisOptions: RedisOptions = {
   },
 };
 
-// Dedicated connection for general Redis operations (rate limiter, cache, health checks)
 export const redisClient = new Redis(redisUrl, redisOptions);
+export const redisConnection = redisClient;
 
 redisClient.on("connect", () => {
   logger.info("Connected to Redis");

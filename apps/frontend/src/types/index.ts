@@ -1,4 +1,4 @@
-export type EmailStatus = "PENDING" | "PROCESSING" | "SENT" | "FAILED" | "RESCHEDULED";
+export type EmailStatus = "PENDING" | "PROCESSING" | "SENT" | "FAILED" | "RESCHEDULED" | "CANCELLED";
 
 export interface User {
   id: string;

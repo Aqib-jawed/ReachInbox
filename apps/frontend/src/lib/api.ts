@@ -89,6 +89,17 @@ export const api = {
   ): Promise<{ success: boolean; source: string; total: number; data: ScheduledEmail[] }> =>
     fetchWithAuth(`/api/emails/search?userId=${userId}&q=${encodeURIComponent(query)}${status ? `&status=${status}` : ""}`),
 
+  cancelEmail: (id: string): Promise<{ success: boolean; message: string; data: ScheduledEmail }> =>
+    fetchWithAuth(`/api/emails/${id}/cancel`, {
+      method: "DELETE",
+    }),
+
+  retryEmail: (id: string, scheduledAt?: string): Promise<{ success: boolean; message: string; data: ScheduledEmail }> =>
+    fetchWithAuth(`/api/emails/${id}/retry`, {
+      method: "POST",
+      body: JSON.stringify({ scheduledAt }),
+    }),
+
   // Senders
   getSenders: (userId: string): Promise<{ success: boolean; count: number; data: Sender[] }> =>
     fetchWithAuth(`/api/senders?userId=${userId}`),

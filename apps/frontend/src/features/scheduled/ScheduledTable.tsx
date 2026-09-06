@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { ScheduledEmail } from "../../types";
-import { Clock } from "lucide-react";
+import { Clock, XCircle, Loader2 } from "lucide-react";
+import { api } from "../../lib/api";
 
 interface ScheduledTableProps {
   emails: ScheduledEmail[];
@@ -8,6 +9,7 @@ interface ScheduledTableProps {
   onRefresh: () => void;
   onOpenCompose: () => void;
   onSelectEmail?: (email: ScheduledEmail) => void;
+  onToast?: (type: "success" | "error" | "info", title: string, message?: string) => void;
 }
 
 const DEFAULT_SCHEDULED_ITEMS: ScheduledEmail[] = [
@@ -58,10 +60,31 @@ function formatScreenshotTime(dateStr?: string | Date, index?: number) {
 export const ScheduledTable: React.FC<ScheduledTableProps> = ({
   emails,
   isLoading: _isLoading,
+  onRefresh,
   onSelectEmail,
+  onToast,
 }) => {
-  // Use DB emails if available, otherwise display exact screenshot rows
+  const [cancellingIds, setCancellingIds] = useState<Record<string, boolean>>({});
   const displayItems = emails && emails.length > 0 ? emails : DEFAULT_SCHEDULED_ITEMS;
+
+  const handleCancel = async (e: React.MouseEvent, email: ScheduledEmail) => {
+    e.stopPropagation();
+    if (!email.id || email.id.startsWith("demo-")) {
+      onToast?.("info", "Demo email", "Cannot cancel demo item");
+      return;
+    }
+
+    setCancellingIds((prev) => ({ ...prev, [email.id]: true }));
+    try {
+      await api.cancelEmail(email.id);
+      onToast?.("success", "Email Cancelled", `Email to ${email.recipientEmail} has been cancelled.`);
+      onRefresh();
+    } catch (err: any) {
+      onToast?.("error", "Cancel failed", err.message || "Failed to cancel email");
+    } finally {
+      setCancellingIds((prev) => ({ ...prev, [email.id]: false }));
+    }
+  };
 
   return (
     <div className="w-full">
@@ -78,33 +101,57 @@ export const ScheduledTable: React.FC<ScheduledTableProps> = ({
           ? email.recipientEmail.split("@")[0]
           : email.recipientEmail;
 
+        const isCancelling = Boolean(cancellingIds[email.id]);
+
         return (
           <div
             key={email.id || idx}
             onClick={() => onSelectEmail && onSelectEmail(email)}
-            className="py-3 px-4 flex items-center border-b border-[#F4F5F6] hover:bg-[#FAFAFA] transition-colors duration-150 cursor-pointer text-[13px] group"
+            className="py-3 px-4 flex items-center justify-between border-b border-[#F4F5F6] hover:bg-[#FAFAFA] transition-colors duration-150 cursor-pointer text-[13px] group"
           >
-            {/* Column 1: To: John Smith */}
-            <div className="w-44 sm:w-52 shrink-0 font-bold text-[#1F2937] truncate pr-2">
-              To: {formattedRecipient}
+            <div className="flex items-center min-w-0 flex-1 pr-3">
+              {/* Column 1: To: John Smith */}
+              <div className="w-40 sm:w-48 shrink-0 font-bold text-[#1F2937] truncate pr-2">
+                To: {formattedRecipient}
+              </div>
+
+              {/* Column 2: Amber Time Badge with Clock icon */}
+              <div className="shrink-0 mr-3">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">
+                  <Clock className="w-3 h-3 text-[#B45309]" />
+                  <span>{timeBadgeText}</span>
+                </span>
+              </div>
+
+              {/* Column 3: Subject & Body Snippet in one line */}
+              <div className="flex items-center min-w-0 truncate">
+                <span className="font-semibold text-[#1F2937] shrink-0 mr-1.5">
+                  {email.subject}
+                </span>
+                <span className="text-[#9CA3AF] truncate">
+                  - {rawSnippet}
+                </span>
+              </div>
             </div>
 
-            {/* Column 2: Amber Time Badge with Clock icon */}
-            <div className="shrink-0 mr-3">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">
-                <Clock className="w-3 h-3 text-[#B45309]" />
-                <span>{timeBadgeText}</span>
-              </span>
-            </div>
-
-            {/* Column 3: Subject & Body Snippet in one line */}
-            <div className="flex items-center min-w-0 truncate">
-              <span className="font-semibold text-[#1F2937] shrink-0 mr-1.5">
-                {email.subject}
-              </span>
-              <span className="text-[#9CA3AF] truncate">
-                - {rawSnippet}
-              </span>
+            {/* Cancel Action Button on hover */}
+            <div className="shrink-0 flex items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => handleCancel(e, email)}
+                disabled={isCancelling}
+                title="Cancel scheduled email"
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-rose-50 rounded-lg text-[#9CA3AF] hover:text-rose-600 cursor-pointer flex items-center gap-1 text-[11px]"
+              >
+                {isCancelling ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                ) : (
+                  <>
+                    <XCircle className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Cancel</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         );

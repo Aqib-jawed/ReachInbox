@@ -4,17 +4,15 @@ import { createRedisConnection } from "../../config/redis";
 import { prisma } from "../../config/db";
 import { checkAndIncrementRateLimit } from "../limiter/rate-limiter";
 import { sendEmailViaEthereal } from "../../integrations/ethereal/mailer";
-import pino from "pino";
-
-const logger = pino({
-  name: "email-worker",
-  level: process.env.LOG_LEVEL || "info",
-});
+import logger from "../../lib/logger";
 
 export async function processEmailJob(job: Job<EmailJobData>) {
   const { scheduledEmailId, senderId, recipientEmail, subject, body, hourlyLimit } = job.data;
 
-  logger.info({ jobId: job.id, scheduledEmailId, recipientEmail }, "Processing email job");
+  logger.info(
+    { emailId: scheduledEmailId, jobId: job.id, senderId, recipientEmail },
+    "Processing email job"
+  );
 
   // Step 1: Idempotency DB guard
   // Atomically claim the job by transitioning from PENDING/RESCHEDULED to PROCESSING
@@ -30,13 +28,27 @@ export async function processEmailJob(job: Job<EmailJobData>) {
   });
 
   if (!emailRecord) {
-    logger.warn({ scheduledEmailId }, "Scheduled email record not found in DB. Skipping.");
+    logger.warn(
+      { emailId: scheduledEmailId, jobId: job.id, senderId },
+      "Scheduled email record not found in DB. Skipping."
+    );
     return { skipped: true, reason: "NOT_FOUND" };
   }
 
   if (emailRecord.status === "SENT") {
-    logger.info({ scheduledEmailId }, "Email already sent (idempotency guard triggered). Skipping.");
+    logger.info(
+      { emailId: scheduledEmailId, jobId: job.id, senderId },
+      "Email already sent (idempotency guard triggered). Skipping."
+    );
     return { skipped: true, reason: "ALREADY_SENT" };
+  }
+
+  if (emailRecord.status === "CANCELLED") {
+    logger.info(
+      { emailId: scheduledEmailId, jobId: job.id, senderId },
+      "Email was cancelled by user. Skipping."
+    );
+    return { skipped: true, reason: "CANCELLED" };
   }
 
   // Atomically update status to PROCESSING
@@ -63,7 +75,8 @@ export async function processEmailJob(job: Job<EmailJobData>) {
 
     logger.warn(
       {
-        scheduledEmailId,
+        emailId: scheduledEmailId,
+        jobId: job.id,
         senderId,
         currentCount: rateLimitResult.currentCount,
         maxPerHour,
@@ -109,8 +122,11 @@ export async function processEmailJob(job: Job<EmailJobData>) {
           nextRunAt: nextWindowAt,
         }
       );
-    } catch (slackErr) {
-      logger.error({ slackErr }, "Non-fatal error in Slack rate limit notification");
+    } catch (slackErr: any) {
+      logger.error(
+        { emailId: scheduledEmailId, jobId: job.id, senderId, slackErr: slackErr?.message },
+        "Non-fatal error in Slack rate limit notification"
+      );
     }
 
     return {
@@ -145,14 +161,16 @@ export async function processEmailJob(job: Job<EmailJobData>) {
 
     logger.info(
       {
-        scheduledEmailId,
+        emailId: scheduledEmailId,
+        jobId: job.id,
+        senderId,
         messageId: sendResult.messageId,
         previewUrl: sendResult.previewUrl,
       },
       "Email marked as SENT in database"
     );
 
-    // Elasticsearch Indexing hook (Phase 4 integration)
+    // Elasticsearch Indexing hook
     try {
       const { indexEmailDocument } = await import("../../integrations/elasticsearch/indexer");
       await indexEmailDocument({
@@ -177,7 +195,10 @@ export async function processEmailJob(job: Job<EmailJobData>) {
       previewUrl: sendResult.previewUrl,
     };
   } catch (err: any) {
-    logger.error({ err, scheduledEmailId }, "Failed to send email via SMTP");
+    logger.error(
+      { emailId: scheduledEmailId, jobId: job.id, senderId, err: err?.message },
+      "Failed to send email via SMTP"
+    );
 
     await prisma.scheduledEmail.update({
       where: { id: scheduledEmailId },
@@ -203,11 +224,11 @@ export function createEmailWorker(concurrency?: number) {
   });
 
   worker.on("completed", (job) => {
-    logger.info({ jobId: job.id }, "Job completed successfully");
+    logger.info({ jobId: job.id, emailId: job.data.scheduledEmailId }, "Job completed successfully");
   });
 
   worker.on("failed", (job, err) => {
-    logger.error({ jobId: job?.id, err }, "Job failed");
+    logger.error({ jobId: job?.id, emailId: job?.data.scheduledEmailId, err: err?.message }, "Job failed");
   });
 
   return worker;

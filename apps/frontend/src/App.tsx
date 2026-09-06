@@ -402,6 +402,7 @@ export function App() {
               onRefresh={loadDashboardData}
               onOpenCompose={() => setIsComposeOpen(true)}
               onSelectEmail={(email) => setSelectedEmail(email)}
+              onToast={addToast}
             />
           )}
           {activeTab === "sent" && (
@@ -411,6 +412,7 @@ export function App() {
               onRefresh={loadDashboardData}
               onOpenCompose={() => setIsComposeOpen(true)}
               onSelectEmail={(email) => setSelectedEmail(email)}
+              onToast={addToast}
             />
           )}
           {activeTab === "queue" && (
